@@ -1,0 +1,50 @@
+[project]
+name = "wwi-realtime"
+version = "0.1.0"
+description = "Automated WWI real-time tweet generation system"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.40.0",       # Claude API
+    "httpx>=0.27.0",           # HTTP client for APIs
+    "wikipedia-api>=0.7.0",    # Wikipedia access
+    "beautifulsoup4>=4.12.0",  # HTML parsing
+    "lxml>=5.0.0",             # Fast XML/HTML parser
+    "sqlite-utils>=3.37",      # SQLite utilities
+    "rich>=13.0.0",            # Pretty terminal output
+    "click>=8.1.0",            # CLI framework
+    "pydantic>=2.0.0",         # Data validation
+    "python-dateutil>=2.9.0",  # Date parsing
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.7.0",
+]
+vector = [
+    "chromadb>=0.5.0",         # Vector database (optional)
+    "sentence-transformers>=3.0.0",  # Embeddings (optional)
+]
+
+[project.scripts]
+wwi = "wwi_realtime.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wwi_realtime"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
