@@ -48,3 +48,5 @@ site/
 .pytest_cache/
 .coverage
 htmlcov/
+data/sources/
+data/story_engine.db

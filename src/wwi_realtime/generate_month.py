@@ -1,4 +1,4 @@
-"""Generate tweets for a single month using Claude API."""
+"""Generate tweets for a single month using the story engine."""
 
 import json
 import sqlite3
@@ -10,30 +10,30 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from wwi_realtime.generate.research import research_month
 from wwi_realtime.utils.claude import (
     MonthOutput,
     generate_month_tweets,
     validate_tweets,
+    output_to_dict,
 )
-from wwi_realtime.enrich_events import get_articles_for_event
 
 console = Console()
 
 
 def get_events_for_month(conn: sqlite3.Connection, year: int, month: int) -> dict[str, list[dict]]:
-    """Get all events for a given month, grouped by date."""
-    # Get first and last day of month
+    """Get all events for a given month from story_engine.db, grouped by date."""
     _, last_day = monthrange(year, month)
     start_date = f"{year:04d}-{month:02d}-01"
     end_date = f"{year:04d}-{month:02d}-{last_day:02d}"
 
     cursor = conn.execute(
         """
-        SELECT id, date, title, summary, location, significance, wikipedia_url,
-               start_date, end_date, is_multi_day
-        FROM events
-        WHERE date >= ? AND date <= ?
-        ORDER BY date, significance DESC
+        SELECT e.id, e.date, e.title, e.summary, e.arc_id, a.title as arc_title
+        FROM events e
+        LEFT JOIN arcs a ON e.arc_id = a.id
+        WHERE e.date >= ? AND e.date <= ?
+        ORDER BY e.date
         """,
         (start_date, end_date),
     )
@@ -45,12 +45,8 @@ def get_events_for_month(conn: sqlite3.Connection, year: int, month: int) -> dic
             "date": row[1],
             "title": row[2],
             "summary": row[3],
-            "location": row[4],
-            "significance": row[5],
-            "wikipedia_url": row[6],
-            "start_date": row[7],
-            "end_date": row[8],
-            "is_multi_day": row[9],
+            "arc_id": row[4],
+            "arc_title": row[5],
         }
         if event["date"] not in events_by_date:
             events_by_date[event["date"]] = []
@@ -59,40 +55,8 @@ def get_events_for_month(conn: sqlite3.Connection, year: int, month: int) -> dic
     return events_by_date
 
 
-def get_ongoing_events(conn: sqlite3.Connection, year: int, month: int) -> list[dict]:
-    """Get multi-day events that span into or through this month."""
-    _, last_day = monthrange(year, month)
-    start_date = f"{year:04d}-{month:02d}-01"
-    end_date = f"{year:04d}-{month:02d}-{last_day:02d}"
-
-    cursor = conn.execute(
-        """
-        SELECT id, title, start_date, end_date, summary, location
-        FROM events
-        WHERE is_multi_day = 1
-          AND start_date <= ?
-          AND (end_date >= ? OR end_date IS NULL)
-        ORDER BY start_date
-        """,
-        (end_date, start_date),
-    )
-
-    return [
-        {
-            "id": row[0],
-            "title": row[1],
-            "start_date": row[2],
-            "end_date": row[3],
-            "summary": row[4],
-            "location": row[5],
-        }
-        for row in cursor.fetchall()
-    ]
-
-
 def load_previous_summary(summaries_dir: Path, year: int, month: int) -> str:
     """Load summary from previous month."""
-    # Calculate previous month
     if month == 1:
         prev_year, prev_month = year - 1, 12
     else:
@@ -103,40 +67,7 @@ def load_previous_summary(summaries_dir: Path, year: int, month: int) -> str:
         data = json.loads(summary_file.read_text())
         return data.get("month_summary", "No summary available.")
 
-    return "None - this is the first month or previous month not yet generated."
-
-
-def get_articles_for_month(
-    conn: sqlite3.Connection,
-    events_by_date: dict[str, list[dict]],
-) -> dict[str, list[dict]]:
-    """Load all articles for events in a month.
-
-    Args:
-        conn: Database connection
-        events_by_date: Events grouped by date (from get_events_for_month)
-
-    Returns:
-        Dict mapping event_id to list of article dicts
-    """
-    articles_by_event: dict[str, list[dict]] = {}
-
-    # Check if articles table exists
-    cursor = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='articles'"
-    )
-    if not cursor.fetchone():
-        return articles_by_event
-
-    for date_str, events in events_by_date.items():
-        for event in events:
-            event_id = event.get("id")
-            if event_id:
-                articles = get_articles_for_event(conn, event_id)
-                if articles:
-                    articles_by_event[event_id] = articles
-
-    return articles_by_event
+    return "This is the beginning of the war coverage."
 
 
 def save_month_output(
@@ -145,6 +76,9 @@ def save_month_output(
     summaries_dir: Path,
 ) -> None:
     """Save generated tweets and summary to disk."""
+    # Convert to dict for serialization
+    output_dict = output_to_dict(output)
+
     # Save month summary
     summaries_dir.mkdir(parents=True, exist_ok=True)
     summary_file = summaries_dir / f"{output.month}.json"
@@ -157,34 +91,21 @@ def save_month_output(
     month_dir = tweets_dir / output.month
     month_dir.mkdir(parents=True, exist_ok=True)
 
-    for date_str, day_data in output.days.items():
-        day_file = month_dir / f"{date_str.split('-')[2]}.json"
-        day_output = {
-            "date": date_str,
-            "tweets": [
-                {
-                    "text": t.text,
-                    "facts_used": t.facts_used,
-                    "event_id": t.event_id,
-                }
-                for t in day_data.tweets
-            ],
-            "summary": day_data.summary,
-        }
-        day_file.write_text(json.dumps(day_output, indent=2))
-
-    return output
+    for date_str, day_data in output_dict["days"].items():
+        day_num = date_str.split("-")[2]
+        day_file = month_dir / f"{day_num}.json"
+        day_file.write_text(json.dumps(day_data, indent=2))
 
 
 @click.command()
 @click.option("--month", required=True, help="Month to generate (YYYY-MM)")
-@click.option("--db", default="data/events.db", help="Path to events database")
+@click.option("--db", default="data/story_engine.db", help="Path to story engine database")
 @click.option("--output", default="tweets", help="Output directory for tweets")
 @click.option("--summaries", default="data/month_summaries", help="Directory for month summaries")
 @click.option("--model", default="claude-sonnet-4-20250514", help="Claude model to use")
-@click.option("--dry-run", is_flag=True, help="Don't actually call Claude, just show what would be sent")
+@click.option("--dry-run", is_flag=True, help="Don't call Claude, just show research")
 def main(month: str, db: str, output: str, summaries: str, model: str, dry_run: bool):
-    """Generate tweets for a single month."""
+    """Generate tweets for a single month using the story engine."""
     # Parse month
     try:
         year, month_num = map(int, month.split("-"))
@@ -192,44 +113,58 @@ def main(month: str, db: str, output: str, summaries: str, model: str, dry_run: 
         console.print("[red]Invalid month format. Use YYYY-MM[/red]")
         return
 
-    # Connect to database
+    # Connect to story engine database
     db_path = Path(db)
     if not db_path.exists():
         console.print(f"[red]Database not found: {db_path}[/red]")
+        console.print("[yellow]Run 'python -m wwi_realtime.init_story_engine' first[/yellow]")
         return
 
     conn = sqlite3.connect(db_path)
 
-    # Get events
+    # Get events for the month
     events_by_date = get_events_for_month(conn, year, month_num)
-    ongoing_events = get_ongoing_events(conn, year, month_num)
+    total_events = sum(len(e) for e in events_by_date.values())
+
+    # Research the month - get passages and arc narratives
+    console.print(f"\n[bold]Researching {month}...[/bold]")
+    research = research_month(conn, year, month_num, events_by_date, max_passages_per_event=3)
+
+    # Load previous month summary
     previous_summary = load_previous_summary(Path(summaries), year, month_num)
 
-    # Get primary sources for events
-    articles_by_event = get_articles_for_month(conn, events_by_date)
-    total_articles = sum(len(a) for a in articles_by_event.values())
-
     # Show what we found
-    total_events = sum(len(e) for e in events_by_date.values())
     console.print(f"\n[bold]Month: {month}[/bold]")
     console.print(f"  Events found: {total_events}")
     console.print(f"  Days with events: {len(events_by_date)}")
-    console.print(f"  Ongoing multi-day events: {len(ongoing_events)}")
-    console.print(f"  Events with primary sources: {len(articles_by_event)}")
-    console.print(f"  Total newspaper articles: {total_articles}")
+    console.print(f"  Events with passages: {len(research['passages_by_event'])}")
+    console.print(f"  Active arcs: {len(research['arc_narratives'])}")
 
-    if ongoing_events:
-        console.print("\n[bold]Ongoing events:[/bold]")
-        for e in ongoing_events:
-            console.print(f"  - {e['title']} ({e['start_date']} to {e['end_date']})")
+    total_passages = sum(len(p) for p in research['passages_by_event'].values())
+    console.print(f"  Total passages: {total_passages}")
+
+    if research['arc_narratives']:
+        console.print("\n[bold]Active arcs:[/bold]")
+        for arc_id in list(research['arc_narratives'].keys())[:5]:
+            console.print(f"  - {arc_id.replace('_', ' ').title()}")
 
     if dry_run:
-        console.print("\n[yellow]Dry run - not calling Claude[/yellow]")
-        console.print("\n[bold]Events by date:[/bold]")
-        for date_str, events in sorted(events_by_date.items()):
+        console.print("\n[yellow]Dry run - showing sample research[/yellow]")
+        console.print("\n[bold]Sample events by date:[/bold]")
+        for date_str, events in list(sorted(events_by_date.items()))[:5]:
             console.print(f"\n  {date_str}:")
-            for e in events:
-                console.print(f"    - [{e['significance']}] {e['title']}")
+            for e in events[:2]:
+                console.print(f"    - {e['title']}")
+                if e.get('arc_title'):
+                    console.print(f"      Arc: {e['arc_title']}")
+
+        console.print("\n[bold]Sample passages:[/bold]")
+        for event_title, passages in list(research['passages_by_event'].items())[:3]:
+            console.print(f"\n  For: {event_title}")
+            for p in passages[:1]:
+                console.print(f"    \"{p.content[:100]}...\"")
+                console.print(f"    - {p.source_author}, {p.source_title}")
+
         return
 
     # Generate tweets
@@ -237,9 +172,9 @@ def main(month: str, db: str, output: str, summaries: str, model: str, dry_run: 
     output_data = generate_month_tweets(
         month=month,
         events_by_date=events_by_date,
-        ongoing_events=ongoing_events,
+        passages_by_event=research['passages_by_event'],
+        arc_narratives=research['arc_narratives'],
         previous_month_summary=previous_summary,
-        articles_by_event=articles_by_event,
         model=model,
     )
 
@@ -247,7 +182,7 @@ def main(month: str, db: str, output: str, summaries: str, model: str, dry_run: 
     warnings = validate_tweets(output_data)
     if warnings:
         console.print("\n[yellow]Warnings:[/yellow]")
-        for w in warnings:
+        for w in warnings[:10]:
             console.print(f"  - {w}")
 
     # Save output
@@ -255,25 +190,42 @@ def main(month: str, db: str, output: str, summaries: str, model: str, dry_run: 
 
     # Show summary
     total_tweets = sum(len(d.tweets) for d in output_data.days.values())
-    console.print(f"\n[green]Generated {total_tweets} tweets for {month}[/green]")
+    total_threads = sum(len(d.threads) for d in output_data.days.values())
+    thread_tweets = sum(
+        len(t.tweets)
+        for d in output_data.days.values()
+        for t in d.threads
+    )
+
+    console.print(f"\n[green]Generated content for {month}:[/green]")
+    console.print(f"  Single tweets: {total_tweets}")
+    console.print(f"  Threads: {total_threads} ({thread_tweets} tweets)")
+    console.print(f"  Output: {Path(output) / month}")
 
     # Show sample
-    table = Table(title="Sample Tweets")
+    table = Table(title="Sample Content")
     table.add_column("Date")
-    table.add_column("Tweet")
+    table.add_column("Type")
+    table.add_column("Content")
 
     shown = 0
     for date_str, day in sorted(output_data.days.items()):
-        for tweet in day.tweets[:1]:  # Show max 1 tweet per day
-            table.add_row(date_str, tweet.text[:100] + "..." if len(tweet.text) > 100 else tweet.text)
+        # Show single tweets
+        for tweet in day.tweets[:1]:
+            text = tweet.text[:80] + "..." if len(tweet.text) > 80 else tweet.text
+            table.add_row(date_str, "tweet", text)
             shown += 1
-            if shown >= 5:
-                break
-        if shown >= 5:
+
+        # Show threads
+        for thread in day.threads[:1]:
+            text = f"[{len(thread.tweets)} tweets] {thread.event_title}"
+            table.add_row(date_str, "thread", text)
+            shown += 1
+
+        if shown >= 8:
             break
 
     console.print(table)
-
     conn.close()
 
 

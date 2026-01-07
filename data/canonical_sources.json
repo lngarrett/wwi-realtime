@@ -1,0 +1,370 @@
+{
+  "version": 1,
+  "description": "Curated list of canonical WWI primary sources for the story engine",
+  "sources": [
+    {
+      "id": "over_the_top",
+      "title": "Over the Top",
+      "author": "Arthur Guy Empey",
+      "author_info": "American soldier, served with British Army",
+      "type": "memoir",
+      "perspective": "american",
+      "gutenberg_id": "7962",
+      "priority": 1,
+      "coverage": {
+        "arcs": ["western_front"],
+        "topics": ["trench_warfare", "infantry", "american_experience"]
+      },
+      "notes": "First-hand account of trench warfare, very popular at the time"
+    },
+    {
+      "id": "gallipoli_diary_v1",
+      "title": "Gallipoli Diary, Volume I",
+      "author": "Ian Hamilton",
+      "author_info": "British General, commanded Mediterranean Expeditionary Force",
+      "type": "diary",
+      "perspective": "british",
+      "gutenberg_id": "19317",
+      "priority": 1,
+      "coverage": {
+        "arcs": ["gallipoli"],
+        "events": ["gallipoli_landing", "anzac_cove"],
+        "topics": ["command", "strategy", "gallipoli"]
+      },
+      "notes": "Daily diary from the commander of the Gallipoli campaign"
+    },
+    {
+      "id": "gallipoli_diary_v2",
+      "title": "Gallipoli Diary, Volume II",
+      "author": "Ian Hamilton",
+      "author_info": "British General, commanded Mediterranean Expeditionary Force",
+      "type": "diary",
+      "perspective": "british",
+      "gutenberg_id": "22021",
+      "priority": 1,
+      "coverage": {
+        "arcs": ["gallipoli"],
+        "topics": ["command", "strategy", "gallipoli", "evacuation"]
+      }
+    },
+    {
+      "id": "german_deserter",
+      "title": "A German Deserter's War Experience",
+      "author": "Anonymous",
+      "author_info": "German soldier who deserted",
+      "type": "memoir",
+      "perspective": "german",
+      "gutenberg_id": "42721",
+      "priority": 1,
+      "coverage": {
+        "arcs": ["western_front"],
+        "topics": ["german_perspective", "desertion", "infantry", "trench_warfare"]
+      },
+      "notes": "Rare German enlisted perspective, critical of war"
+    },
+    {
+      "id": "under_fire",
+      "title": "Under Fire (Le Feu)",
+      "author": "Henri Barbusse",
+      "author_info": "French soldier and writer",
+      "type": "memoir",
+      "perspective": "french",
+      "gutenberg_id": "10897",
+      "priority": 1,
+      "coverage": {
+        "arcs": ["western_front"],
+        "topics": ["french_perspective", "infantry", "trench_warfare"]
+      },
+      "notes": "Prix Goncourt winner, vivid account of French infantry experience"
+    },
+    {
+      "id": "first_hundred_thousand",
+      "title": "The First Hundred Thousand",
+      "author": "Ian Hay",
+      "author_info": "British officer, later became a playwright",
+      "type": "memoir",
+      "perspective": "british",
+      "gutenberg_id": "12877",
+      "priority": 2,
+      "coverage": {
+        "arcs": ["western_front"],
+        "topics": ["british_perspective", "training", "kitchener_army"]
+      },
+      "notes": "Chronicles the training and deployment of Kitchener's New Army"
+    },
+    {
+      "id": "outwitting_the_hun",
+      "title": "Outwitting the Hun: My Escape from a German Prison Camp",
+      "author": "Pat O'Brien",
+      "author_info": "American pilot, RFC",
+      "type": "memoir",
+      "perspective": "american",
+      "gutenberg_id": "42490",
+      "priority": 2,
+      "coverage": {
+        "arcs": ["western_front"],
+        "topics": ["aviation", "pow", "escape", "american_experience"]
+      },
+      "notes": "Exciting escape narrative from a POW camp"
+    },
+    {
+      "id": "uboat_diary",
+      "title": "The Diary of a U-boat Commander",
+      "author": "Stephen King-Hall",
+      "author_info": "British naval officer (writing as German)",
+      "type": "diary",
+      "perspective": "german",
+      "gutenberg_id": "7947",
+      "priority": 2,
+      "coverage": {
+        "arcs": ["naval_warfare"],
+        "topics": ["submarine", "naval", "german_perspective"]
+      },
+      "notes": "Fictional diary but based on extensive research"
+    },
+    {
+      "id": "war_letters_public_school",
+      "title": "War Letters of a Public-School Boy",
+      "author": "Henry Paul Mainwaring Jones",
+      "author_info": "British officer, killed in action",
+      "type": "letters",
+      "perspective": "british",
+      "gutenberg_id": "29333",
+      "priority": 2,
+      "coverage": {
+        "arcs": ["western_front"],
+        "topics": ["letters_home", "british_perspective", "officer"]
+      },
+      "notes": "Letters from the front, author died in the war"
+    },
+    {
+      "id": "student_in_arms",
+      "title": "A Student in Arms",
+      "author": "Donald Hankey",
+      "author_info": "British soldier and essayist, killed at the Somme",
+      "type": "essays",
+      "perspective": "british",
+      "gutenberg_id": "14823",
+      "priority": 2,
+      "coverage": {
+        "arcs": ["western_front"],
+        "events": ["battle_of_somme"],
+        "topics": ["british_perspective", "infantry", "philosophy"]
+      },
+      "notes": "Thoughtful essays on soldier life, author killed at Somme 1916"
+    },
+    {
+      "id": "all_quiet_western_front",
+      "title": "All Quiet on the Western Front",
+      "author": "Erich Maria Remarque",
+      "author_info": "German veteran, wrote novel based on experience",
+      "type": "novel",
+      "perspective": "german",
+      "gutenberg_id": "75011",
+      "priority": 1,
+      "coverage": {
+        "arcs": ["western_front"],
+        "topics": ["german_perspective", "infantry", "trauma", "youth"]
+      },
+      "notes": "Most famous WWI novel, based on author's experience"
+    },
+    {
+      "id": "goodbye_to_all_that",
+      "title": "Good-bye to All That",
+      "author": "Robert Graves",
+      "author_info": "British officer and poet",
+      "type": "memoir",
+      "perspective": "british",
+      "gutenberg_id": "76911",
+      "priority": 1,
+      "coverage": {
+        "arcs": ["western_front"],
+        "events": ["battle_of_somme", "battle_of_loos"],
+        "topics": ["british_perspective", "officer", "poetry", "somme"]
+      },
+      "notes": "Classic memoir, very quotable, covers Somme extensively"
+    },
+    {
+      "id": "tales_from_dugout",
+      "title": "Tales from a Dugout",
+      "author": "Arthur Guy Empey",
+      "author_info": "American soldier, served with British Army",
+      "type": "memoir",
+      "perspective": "american",
+      "gutenberg_id": "67697",
+      "priority": 3,
+      "coverage": {
+        "arcs": ["western_front"],
+        "topics": ["trench_warfare", "infantry"]
+      },
+      "notes": "More stories from the author of Over the Top"
+    },
+    {
+      "id": "all_in_it",
+      "title": "All in It: K(1) Carries On",
+      "author": "Ian Hay",
+      "author_info": "British officer",
+      "type": "memoir",
+      "perspective": "british",
+      "gutenberg_id": "12302",
+      "priority": 3,
+      "coverage": {
+        "arcs": ["western_front"],
+        "topics": ["british_perspective", "kitchener_army"]
+      },
+      "notes": "Sequel to The First Hundred Thousand"
+    },
+    {
+      "id": "experiences_dugout",
+      "title": "Experiences of a Dug-out, 1914-1918",
+      "author": "C. E. Callwell",
+      "author_info": "British Major-General",
+      "type": "memoir",
+      "perspective": "british",
+      "gutenberg_id": "21833",
+      "priority": 3,
+      "coverage": {
+        "arcs": ["western_front"],
+        "topics": ["command", "staff", "british_perspective"]
+      },
+      "notes": "Senior officer perspective on the war"
+    },
+    {
+      "id": "four_weeks_trenches",
+      "title": "Four Weeks in the Trenches: The War Story of a Violinist",
+      "author": "Fritz Kreisler",
+      "author_info": "Austrian-American violinist, served in Austrian Army",
+      "type": "memoir",
+      "perspective": "austrian",
+      "gutenberg_id": "10967",
+      "priority": 2,
+      "coverage": {
+        "arcs": ["eastern_front"],
+        "topics": ["austrian_perspective", "eastern_front", "music"]
+      },
+      "notes": "Famous violinist's account of service on Eastern Front"
+    },
+    {
+      "id": "the_28th_aif",
+      "title": "The 28th: A Record of War Service",
+      "author": "Herbert Brayley Collett",
+      "author_info": "Australian soldier, 28th Battalion AIF",
+      "type": "history",
+      "perspective": "australian",
+      "gutenberg_id": "25341",
+      "priority": 2,
+      "coverage": {
+        "arcs": ["gallipoli", "western_front"],
+        "topics": ["australian_perspective", "anzac", "infantry"]
+      },
+      "notes": "Detailed unit history with personal accounts"
+    },
+    {
+      "id": "letters_to_helen",
+      "title": "Letters to Helen: Impressions of an Artist on the Western Front",
+      "author": "Keith Henderson",
+      "author_info": "British artist and soldier",
+      "type": "letters",
+      "perspective": "british",
+      "gutenberg_id": "16626",
+      "priority": 3,
+      "coverage": {
+        "arcs": ["western_front"],
+        "topics": ["art", "letters_home", "british_perspective"]
+      },
+      "notes": "Artist's perspective on the war"
+    },
+    {
+      "id": "attack_trench_warfare",
+      "title": "The Attack in Trench Warfare",
+      "author": "André Laffargue",
+      "author_info": "French Captain, 153rd Infantry",
+      "type": "manual",
+      "perspective": "french",
+      "gutenberg_id": "60197",
+      "priority": 3,
+      "coverage": {
+        "arcs": ["western_front"],
+        "topics": ["tactics", "french_perspective", "infantry"]
+      },
+      "notes": "Tactical manual based on experience, influential document"
+    },
+    {
+      "id": "kaiser_memoirs",
+      "title": "The Kaiser's Memoirs",
+      "author": "Wilhelm II",
+      "author_info": "German Emperor",
+      "type": "memoir",
+      "perspective": "german",
+      "gutenberg_id": "43522",
+      "priority": 2,
+      "coverage": {
+        "arcs": ["wwi_overall"],
+        "topics": ["german_perspective", "leadership", "politics"]
+      },
+      "notes": "The German Emperor's own account, important for political context"
+    },
+    {
+      "id": "hilltop_on_marne",
+      "title": "A Hilltop on the Marne",
+      "author": "Mildred Aldrich",
+      "author_info": "American journalist living in France",
+      "type": "letters",
+      "perspective": "civilian",
+      "gutenberg_id": "11011",
+      "priority": 2,
+      "coverage": {
+        "arcs": ["western_front_1914"],
+        "events": ["first_battle_marne"],
+        "topics": ["civilian_perspective", "marne", "1914"]
+      },
+      "notes": "Civilian perspective on the Battle of the Marne from her house overlooking it"
+    },
+    {
+      "id": "edge_war_zone",
+      "title": "On the Edge of the War Zone",
+      "author": "Mildred Aldrich",
+      "author_info": "American journalist living in France",
+      "type": "letters",
+      "perspective": "civilian",
+      "gutenberg_id": "11947",
+      "priority": 3,
+      "coverage": {
+        "arcs": ["western_front"],
+        "topics": ["civilian_perspective", "american_experience"]
+      },
+      "notes": "Continuation of Hilltop on the Marne"
+    },
+    {
+      "id": "two_war_years_constantinople",
+      "title": "Two War Years in Constantinople",
+      "author": "Harry Stuermer",
+      "author_info": "German journalist in Ottoman Empire",
+      "type": "journalism",
+      "perspective": "german",
+      "gutenberg_id": "60638",
+      "priority": 3,
+      "coverage": {
+        "arcs": ["ottoman_front"],
+        "topics": ["ottoman", "german_perspective", "politics", "armenian_genocide"]
+      },
+      "notes": "German journalist's critical account of Ottoman alliance"
+    },
+    {
+      "id": "storm_of_steel",
+      "title": "Storm of Steel",
+      "author": "Ernst Jünger",
+      "author_info": "German officer, highly decorated",
+      "type": "memoir",
+      "perspective": "german",
+      "internet_archive_id": "stormotsteel00junguoft",
+      "priority": 1,
+      "coverage": {
+        "arcs": ["western_front"],
+        "events": ["battle_of_somme", "spring_offensive_1918"],
+        "topics": ["german_perspective", "officer", "combat", "somme"]
+      },
+      "notes": "One of the most important WWI memoirs, very detailed combat accounts"
+    }
+  ]
+}

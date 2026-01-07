@@ -1,4 +1,7 @@
-"""Build static HTML site from generated tweets."""
+"""Build static HTML site from generated tweets.
+
+Supports both single tweets and multi-tweet threads with source attributions.
+"""
 
 import json
 from datetime import datetime
@@ -8,6 +11,99 @@ import click
 from rich.console import Console
 
 console = Console()
+
+
+# Thread styling additions
+THREAD_STYLES = """
+        /* Thread container */
+        .tweet-thread {
+            border-left: 3px solid #1da1f2;
+            margin-left: 0;
+        }
+
+        .tweet-thread .tweet {
+            border-left: none;
+            position: relative;
+        }
+
+        .tweet-thread .tweet::before {
+            content: '';
+            position: absolute;
+            left: -16px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: #38444d;
+        }
+
+        .tweet-thread .tweet:last-child::before {
+            bottom: 50%;
+        }
+
+        /* Thread position indicator */
+        .thread-position {
+            display: inline-block;
+            background: #1da1f2;
+            color: #fff;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 10px;
+            margin-right: 8px;
+        }
+
+        /* Quote styling */
+        .tweet-quote {
+            font-style: italic;
+            color: #e8e8e8;
+        }
+
+        .tweet-attribution {
+            margin-top: 8px;
+            font-size: 13px;
+            color: #8899a6;
+        }
+
+        .tweet-attribution .author {
+            color: #1da1f2;
+        }
+
+        /* Primary source styling */
+        .primary-source {
+            background: #192734;
+            border-left: 3px solid #17bf63;
+            padding: 8px 12px;
+            margin-top: 8px;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .primary-source .source-quote {
+            font-style: italic;
+            color: #e8e8e8;
+        }
+
+        .primary-source .source-meta {
+            margin-top: 4px;
+            font-size: 12px;
+            color: #8899a6;
+        }
+
+        .primary-source .source-meta .author {
+            color: #17bf63;
+            font-weight: 600;
+        }
+
+        /* Arc badge */
+        .arc-badge {
+            display: inline-block;
+            background: #38444d;
+            color: #8899a6;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 12px;
+            margin-bottom: 8px;
+        }
+"""
 
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -221,6 +317,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             text-align: center;
             color: #8899a6;
         }}
+{thread_styles}
     </style>
 </head>
 <body>
@@ -285,6 +382,46 @@ SOURCES_TEMPLATE = """
         {sources}
     </div>
 </details>
+"""
+
+THREAD_TEMPLATE = """
+<div class="tweet-thread">
+    {arc_badge}
+    {tweets}
+</div>
+"""
+
+THREAD_TWEET_TEMPLATE = """
+<div class="tweet">
+    <div class="tweet-content">
+        <span class="thread-position">{position}/{total}</span>
+        {text}
+    </div>
+    {attribution_html}
+    {primary_source_html}
+    {image_html}
+</div>
+"""
+
+ARC_BADGE_TEMPLATE = """
+<div style="padding: 8px 16px;">
+    <span class="arc-badge">{arc_title}</span>
+</div>
+"""
+
+PRIMARY_SOURCE_TEMPLATE = """
+<div class="primary-source">
+    <div class="source-quote">"{quote}"</div>
+    <div class="source-meta">
+        — <span class="author">{author}</span>, <em>{title}</em>
+    </div>
+</div>
+"""
+
+ATTRIBUTION_TEMPLATE = """
+<div class="tweet-attribution">
+    — <span class="author">{author}</span>
+</div>
 """
 
 
@@ -356,19 +493,98 @@ def render_tweet(tweet: dict) -> str:
     )
 
 
-def render_day(day_file: Path) -> str:
-    """Render all tweets for a day."""
-    data = json.loads(day_file.read_text())
+def render_thread_tweet(tweet: dict, position: int, total: int) -> str:
+    """Render a single tweet within a thread."""
+    # Image
+    image_html = ""
+    if tweet.get("image") and tweet["image"].get("url"):
+        image_html = IMAGE_TEMPLATE.format(
+            url=tweet["image"]["url"],
+            caption=tweet["image"].get("caption", "Historical image")
+        )
 
-    if not data.get("tweets"):
+    # Attribution (for quotes)
+    attribution_html = ""
+    if tweet.get("source_attribution"):
+        attribution_html = ATTRIBUTION_TEMPLATE.format(
+            author=tweet["source_attribution"]
+        )
+
+    # Primary source quote
+    primary_source_html = ""
+    if tweet.get("primary_source"):
+        ps = tweet["primary_source"]
+        primary_source_html = PRIMARY_SOURCE_TEMPLATE.format(
+            quote=ps.get("quote", ""),
+            author=ps.get("author", "Unknown"),
+            title=ps.get("title", ""),
+        )
+
+    return THREAD_TWEET_TEMPLATE.format(
+        position=position,
+        total=total,
+        text=tweet["text"],
+        attribution_html=attribution_html,
+        primary_source_html=primary_source_html,
+        image_html=image_html,
+    )
+
+
+def render_thread(thread: dict) -> str:
+    """Render a multi-tweet thread."""
+    tweets = thread.get("tweets", [])
+    if not tweets:
         return ""
 
-    tweets_html = "\n".join(render_tweet(t) for t in data["tweets"])
+    total = len(tweets)
+
+    # Arc badge
+    arc_badge = ""
+    if thread.get("arc_title"):
+        arc_badge = ARC_BADGE_TEMPLATE.format(arc_title=thread["arc_title"])
+
+    # Render each tweet in the thread
+    tweets_html = []
+    for i, tweet in enumerate(tweets, 1):
+        tweets_html.append(render_thread_tweet(tweet, i, total))
+
+    return THREAD_TEMPLATE.format(
+        arc_badge=arc_badge,
+        tweets="\n".join(tweets_html)
+    )
+
+
+def render_day(day_file: Path) -> str:
+    """Render all tweets for a day.
+
+    Supports both single tweets and multi-tweet threads.
+    Data format can include:
+    - "tweets": list of individual tweets
+    - "threads": list of thread objects with "tweets" arrays
+    """
+    data = json.loads(day_file.read_text())
+
+    content_html = []
+
+    # Render threads first (major events)
+    threads = data.get("threads", [])
+    for thread in threads:
+        thread_html = render_thread(thread)
+        if thread_html:
+            content_html.append(thread_html)
+
+    # Render individual tweets
+    tweets = data.get("tweets", [])
+    for tweet in tweets:
+        content_html.append(render_tweet(tweet))
+
+    if not content_html:
+        return ""
 
     return DAY_TEMPLATE.format(
         date_display=format_date(data["date"]),
         summary=data.get("summary", ""),
-        tweets=tweets_html
+        tweets="\n".join(content_html)
     )
 
 
@@ -393,10 +609,11 @@ def build_month_page(month_dir: Path, output_dir: Path) -> Path:
     if not days_html:
         return None
 
-    # Build full page
+    # Build full page with thread styles
     html = HTML_TEMPLATE.format(
         month_display=format_month(month),
-        content="\n".join(days_html)
+        content="\n".join(days_html),
+        thread_styles=THREAD_STYLES,
     )
 
     # Write output
