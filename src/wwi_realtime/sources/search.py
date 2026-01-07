@@ -390,19 +390,24 @@ def get_vivid_passages(
     Returns:
         List of vivid PassageResult objects
     """
-    # Keywords that indicate vivid, tweetable content - SPECIFIC phrases
+    # Keywords that indicate vivid, tweetable content
     vivid_keywords = [
-        # Direct combat action
-        "went over the top", "fixed bayonets", "machine gun fire",
-        "shells burst", "artillery barrage", "the attack",
-        # Death and wounds - specific
-        "was killed", "was wounded", "lay dead", "fell dead",
-        "hit by", "struck by", "bleeding", "stretcher",
+        # Combat action
+        "attack", "assault", "charge", "shell", "bullet",
+        "machine gun", "artillery", "trench", "wire", "bayonet",
+        "bombardment", "barrage", "explosion", "fire",
+        # Death and wounds
+        "killed", "wounded", "dead", "dying", "blood",
+        "stretcher", "hospital", "casualty", "casualties",
         # First person intensity
-        "I saw", "I heard", "I felt", "we attacked", "we charged",
-        # Specific horrors
-        "screaming", "crying", "groaning", "stench of",
-        "corpse", "body", "burial",
+        "I saw", "I heard", "I felt", "we went", "we were",
+        "my heart", "my hands", "terrified", "afraid",
+        # Sensory/emotional
+        "screaming", "crying", "silence", "noise", "stench",
+        "mud", "rain", "cold", "exhausted", "sleep",
+        # Dialogue markers (good for tweets)
+        "he said", "she said", "I said", "replied", "shouted",
+        "whispered", "yelled", "asked", "answered",
     ]
 
     # Build SQL with keyword matching
