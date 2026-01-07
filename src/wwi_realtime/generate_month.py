@@ -10,11 +10,12 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from wwi_realtime.generate.research import research_month, research_month_vivid
+from wwi_realtime.generate.research import research_month, research_month_vivid, research_month_hybrid
 from wwi_realtime.utils.claude import (
     MonthOutput,
     generate_month_tweets,
     generate_month_vivid,
+    generate_month_hybrid,
     validate_tweets,
     output_to_dict,
 )
@@ -105,9 +106,9 @@ def save_month_output(
 @click.option("--summaries", default="data/month_summaries", help="Directory for month summaries")
 @click.option("--model", default="claude-sonnet-4-20250514", help="Claude model to use")
 @click.option("--dry-run", is_flag=True, help="Don't call Claude, just show research")
-@click.option("--vivid", is_flag=True, default=True, help="Use vivid passage-first approach (default)")
-@click.option("--legacy", is_flag=True, help="Use legacy event-first approach")
-def main(month: str, db: str, output: str, summaries: str, model: str, dry_run: bool, vivid: bool, legacy: bool):
+@click.option("--mode", type=click.Choice(["hybrid", "vivid", "legacy"]), default="hybrid",
+              help="Generation mode: hybrid (events+voices), vivid (passages-first), legacy (events-first)")
+def main(month: str, db: str, output: str, summaries: str, model: str, dry_run: bool, mode: str):
     """Generate tweets for a single month using the story engine."""
     # Parse month
     try:
@@ -129,10 +130,56 @@ def main(month: str, db: str, output: str, summaries: str, model: str, dry_run: 
     events_by_date = get_events_for_month(conn, year, month_num)
     total_events = sum(len(e) for e in events_by_date.values())
 
-    # Determine which approach to use
-    use_vivid = vivid and not legacy
+    if mode == "hybrid":
+        # HYBRID approach: events + matched passages by arc
+        console.print(f"\n[bold]Researching {month} (hybrid: events + voices)...[/bold]")
+        research = research_month_hybrid(conn, year, month_num, events_by_date, max_passages_per_arc=15)
 
-    if use_vivid:
+        console.print(f"\n[bold]Month: {month}[/bold]")
+        console.print(f"  Events found: {total_events}")
+        console.print(f"  Arcs active: {len(research['events_by_arc'])}")
+        total_passages = sum(len(p) for p in research['passages_by_arc'].values())
+        console.print(f"  Matched passages: {total_passages}")
+
+        if dry_run:
+            console.print("\n[yellow]Dry run - showing hybrid research[/yellow]")
+
+            console.print("\n[bold]Events by Arc:[/bold]")
+            for arc_id, events in research['events_by_arc'].items():
+                arc_name = arc_id.replace("_", " ").title()
+                console.print(f"\n  {arc_name} ({len(events)} events):")
+                for e in events[:3]:
+                    console.print(f"    - {e['date']}: {e['title']}")
+
+            # Show event-matched passages
+            passages_by_event = research.get('passages_by_event', {})
+            if passages_by_event:
+                console.print(f"\n[bold]Event-Matched Passages ({len(passages_by_event)} events with matches):[/bold]")
+                for event_title, passages in list(passages_by_event.items())[:5]:
+                    console.print(f"\n  {event_title}:")
+                    for p in passages[:2]:
+                        console.print(f"    {p.source_author}: \"{p.content[:100]}...\"")
+
+            console.print("\n[bold]Additional Arc Passages:[/bold]")
+            for arc_id, passages in research['passages_by_arc'].items():
+                arc_name = arc_id.replace("_", " ").title()
+                console.print(f"\n  {arc_name} ({len(passages)} passages):")
+                for p in passages[:2]:
+                    console.print(f"    {p.source_author}: \"{p.content[:100]}...\"")
+            return
+
+        # Generate tweets with hybrid approach
+        console.print("\n[bold blue]Calling Claude API (hybrid mode)...[/bold blue]")
+        output_data = generate_month_hybrid(
+            month=month,
+            events_by_arc=research['events_by_arc'],
+            passages_by_arc=research['passages_by_arc'],
+            passages_by_event=research.get('passages_by_event', {}),
+            arc_summaries=research['arc_summaries'],
+            model=model,
+        )
+
+    elif mode == "vivid":
         # VIVID approach: passages first, events for context
         console.print(f"\n[bold]Researching {month} (vivid passage-first)...[/bold]")
         research = research_month_vivid(conn, year, month_num, events_by_date, max_vivid_passages=40)
@@ -164,7 +211,8 @@ def main(month: str, db: str, output: str, summaries: str, model: str, dry_run: 
             vivid_passages=research['vivid_passages'],
             model=model,
         )
-    else:
+
+    else:  # legacy mode
         # LEGACY approach: events first, passages as decoration
         console.print(f"\n[bold]Researching {month} (legacy event-first)...[/bold]")
         research = research_month(conn, year, month_num, events_by_date, max_passages_per_event=3)

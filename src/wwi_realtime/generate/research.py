@@ -302,3 +302,148 @@ def research_month_vivid(
         "events_by_date": events_by_date,
         "event_count": event_count,
     }
+
+
+def research_month_hybrid(
+    conn: sqlite3.Connection,
+    year: int,
+    month: int,
+    events_by_date: dict[str, list[dict]],
+    max_passages_per_arc: int = 15,
+) -> dict:
+    """Research a month using hybrid approach: events + matched passages.
+
+    The key insight from WWII account:
+    - Events provide STRUCTURE (what happened, when)
+    - Passages provide VOICE (quotes from people AT those events/arcs)
+    - Arcs provide NARRATIVE (how events connect to larger story)
+
+    Args:
+        conn: Database connection
+        year: Year
+        month: Month (1-12)
+        events_by_date: Events grouped by date
+        max_passages_per_arc: Max passages per arc
+
+    Returns:
+        Dict with:
+        - events_by_arc: events grouped by arc for narrative structure
+        - passages_by_arc: passages from sources covering each arc
+        - passages_by_event: passages matched to specific events
+        - arc_summaries: narrative summary for each arc
+    """
+    # Group events by arc
+    events_by_arc: dict[str, list[dict]] = {}
+    for date_str, events in events_by_date.items():
+        for event in events:
+            arc_id = event.get("arc_id") or "general"
+            if arc_id not in events_by_arc:
+                events_by_arc[arc_id] = []
+            events_by_arc[arc_id].append({**event, "date": date_str})
+
+    # For each arc, find passages from sources that cover it
+    passages_by_arc: dict[str, list[PassageResult]] = {}
+    arc_summaries: dict[str, str] = {}
+
+    for arc_id in events_by_arc.keys():
+        # Get arc info
+        arc = get_arc(conn, arc_id)
+        if arc:
+            arc_summaries[arc_id] = arc.get("narrative_summary") or arc.get("title", arc_id)
+
+        # Find passages from sources that cover this arc
+        passages = get_passages_for_arc(
+            conn,
+            arc_id,
+            with_quotes_only=True,
+            limit=max_passages_per_arc,
+        )
+
+        # If no arc-specific passages, try vivid passages with arc keywords
+        if not passages:
+            # Search for passages mentioning arc-related terms
+            arc_title = arc.get("title", "") if arc else arc_id.replace("_", " ")
+            passages = _search_passages_for_topic(conn, arc_title, limit=max_passages_per_arc)
+
+        if passages:
+            passages_by_arc[arc_id] = passages
+
+    # NEW: Match passages to specific events by keywords
+    passages_by_event: dict[str, list[PassageResult]] = {}
+    all_events = [e for events in events_by_date.values() for e in events]
+
+    for event in all_events:
+        title = event.get("title", "")
+        event_passages = _find_passages_for_event(conn, title, max_passages=5)
+        if event_passages:
+            passages_by_event[title] = event_passages
+
+    return {
+        "events_by_arc": events_by_arc,
+        "passages_by_arc": passages_by_arc,
+        "passages_by_event": passages_by_event,
+        "arc_summaries": arc_summaries,
+        "events_by_date": events_by_date,
+    }
+
+
+def _find_passages_for_event(
+    conn: sqlite3.Connection,
+    event_title: str,
+    max_passages: int = 5,
+) -> list[PassageResult]:
+    """Find passages that might relate to a specific event.
+
+    Uses keyword matching from event title to find relevant passages.
+    Prioritizes quoted passages but includes narrative ones too.
+    """
+    from wwi_realtime.sources.search import search_passages_fts
+
+    # Extract meaningful keywords from event title
+    stop_words = {
+        'the', 'of', 'at', 'in', 'on', 'a', 'an', 'and', 'or', 'to', 'for',
+        'first', 'second', 'third', 'battle', 'siege', 'attack', 'offensive',
+        'day', 'begins', 'ends', 'start', 'end', 'capture'
+    }
+    words = event_title.lower().split()
+    keywords = [w for w in words if w not in stop_words and len(w) > 3]
+
+    if not keywords:
+        return []
+
+    # Search for passages with these keywords
+    query = ' '.join(keywords[:4])  # Limit keywords
+    passages = search_passages_fts(conn, query, limit=max_passages * 4)
+
+    # Filter to reasonable length
+    passages = [p for p in passages if 20 <= p.word_count <= 200]
+
+    # Prioritize quoted passages, then by word count
+    passages.sort(key=lambda p: (not p.has_direct_quote, -p.word_count))
+
+    return passages[:max_passages]
+
+
+def _search_passages_for_topic(
+    conn: sqlite3.Connection,
+    topic: str,
+    limit: int = 15,
+) -> list[PassageResult]:
+    """Search for vivid passages related to a topic."""
+    from wwi_realtime.sources.search import search_passages_fts, get_vivid_passages
+
+    # First try FTS search
+    passages = search_passages_fts(conn, topic, limit=limit)
+
+    # Filter to ones with quotes and good length
+    passages = [p for p in passages if p.has_direct_quote and 30 <= p.word_count <= 150]
+
+    # If not enough, supplement with general vivid passages
+    if len(passages) < limit // 2:
+        vivid = get_vivid_passages(conn, limit=limit - len(passages))
+        seen = {p.passage_id for p in passages}
+        for p in vivid:
+            if p.passage_id not in seen:
+                passages.append(p)
+
+    return passages[:limit]

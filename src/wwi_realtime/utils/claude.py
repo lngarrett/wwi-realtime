@@ -125,6 +125,79 @@ JSON object:
 Generate tweets for {month}. The soldier memoirs ARE your content."""
 
 
+HYBRID_GENERATION_PROMPT = """You are a WWI correspondent telling the story of {month}.
+
+## THE BIG PICTURE
+{arc_narratives}
+
+## EVENTS YOU MUST COVER
+{events_section}
+
+## SOLDIER VOICES TO ENHANCE EVENTS
+{passages_section}
+
+## CRITICAL REQUIREMENTS
+
+1. **EVERY EVENT MUST GET A TWEET** - The events above are your primary content. Each event should get at least one tweet reporting what happened.
+
+2. **MAJOR EVENTS GET THREADS** - Battles, sieges, major offensives should get 2-4 tweet threads that:
+   - Start with WHAT HAPPENED (facts, casualties, outcome)
+   - Add human voices from the PASSAGES that relate to this event
+   - Build a narrative arc
+
+3. **QUOTES ENHANCE, NOT REPLACE** - Soldier voices make events real, but the EVENT is primary:
+   - BAD: Random quote with no context
+   - GOOD: "Battle of Mons: BEF retreats under German pressure. Private Sidney Godley: 'I kept firing until my ammunition ran out.'"
+
+## EXAMPLE OUTPUT
+
+For "First Day on the Somme" (July 1, 1916):
+
+Tweet 1 (THE EVENT):
+"British 'Big Push' begins at 7:30am. 57,470 casualties including 19,240 dead - worst single day in British military history."
+
+Tweet 2 (HUMAN VOICE):
+"Arthur Empey in the assault: 'The Captain slowly raised the limp form. It was Lloyd, the coward of B Company. He had died that his mates might live.'"
+
+NOT THIS (quote-spam with no event):
+"Pat O'Brien returning home: 'Hello! He looked at me for a minute. My friend, you certainly look like Pat O'Brien.'"
+
+## FORMAT RULES
+- Report WHAT HAPPENED first, then enhance with voices
+- 280 characters max per tweet
+- NO exclamation marks
+- Present tense: "German forces attack" not "attacked"
+- Name individuals: "Private Ernst Jünger, 19"
+- Use only quotes from PASSAGES section
+
+## OUTPUT FORMAT
+{{
+  "days": {{
+    "YYYY-MM-DD": {{
+      "tweets": [
+        {{"text": "Event text with optional quote", "has_quote": true/false, "source_attribution": "Author, Book" or null}}
+      ],
+      "threads": [
+        {{
+          "event_title": "Major Event Name",
+          "arc_id": "arc_id",
+          "arc_title": "Arc Title",
+          "tweets": [
+            {{"text": "First: what happened", "position": 1, "total": 3, "has_quote": false}},
+            {{"text": "Then: soldier voice", "position": 2, "total": 3, "has_quote": true, "source_attribution": "Author, Book"}},
+            {{"text": "Conclusion", "position": 3, "total": 3, "has_quote": false}}
+          ]
+        }}
+      ],
+      "summary": "One-line summary"
+    }}
+  }},
+  "month_summary": "Summary of {month}"
+}}
+
+REMEMBER: Events are the backbone. Every event in the list above needs coverage. Quotes make it human but never replace the facts."""
+
+
 def get_client() -> Anthropic:
     """Get configured Anthropic client."""
     api_key = os.environ.get("ANTHROPIC_API_KEY")
@@ -374,6 +447,198 @@ def generate_month_vivid(
         raise ValueError(f"Failed to parse Claude response as JSON: {e}\nResponse: {response_text[:500]}")
 
     # Convert to dataclasses (same as generate_month_tweets)
+    days = {}
+    for date_str, day_data in data.get("days", {}).items():
+        tweets = []
+        for t in day_data.get("tweets", []):
+            tweets.append(GeneratedTweet(
+                text=t.get("text", ""),
+                position=1,
+                total=1,
+                has_quote=t.get("has_quote", False),
+                source_attribution=t.get("source_attribution"),
+            ))
+
+        threads = []
+        for thread_data in day_data.get("threads", []):
+            thread_tweets = []
+            for t in thread_data.get("tweets", []):
+                thread_tweets.append(GeneratedTweet(
+                    text=t.get("text", ""),
+                    position=t.get("position", 1),
+                    total=t.get("total", len(thread_data.get("tweets", []))),
+                    has_quote=t.get("has_quote", False),
+                    source_attribution=t.get("source_attribution"),
+                ))
+
+            threads.append(TweetThread(
+                event_title=thread_data.get("event_title", ""),
+                event_date=date_str,
+                arc_id=thread_data.get("arc_id"),
+                arc_title=thread_data.get("arc_title"),
+                tweets=thread_tweets,
+            ))
+
+        days[date_str] = DayOutput(
+            date=date_str,
+            tweets=tweets,
+            threads=threads,
+            summary=day_data.get("summary", ""),
+        )
+
+    return MonthOutput(
+        month=month,
+        days=days,
+        month_summary=data.get("month_summary", ""),
+    )
+
+
+def format_events_by_arc(events_by_arc: dict[str, list[dict]]) -> str:
+    """Format events grouped by arc for hybrid prompt."""
+    if not events_by_arc:
+        return "No events recorded."
+
+    lines = []
+    for arc_id, events in events_by_arc.items():
+        arc_name = arc_id.replace("_", " ").title()
+        lines.append(f"\n### {arc_name}")
+
+        # Sort events by date
+        for event in sorted(events, key=lambda e: e.get("date", "")):
+            date = event.get("date", "")
+            title = event.get("title", "Unknown")
+            summary = event.get("summary", "")[:200]
+            lines.append(f"- {date}: **{title}**")
+            if summary:
+                lines.append(f"  {summary}")
+
+    return "\n".join(lines)
+
+
+def format_passages_by_arc(passages_by_arc: dict[str, list[PassageResult]]) -> str:
+    """Format passages grouped by arc for hybrid prompt."""
+    if not passages_by_arc:
+        return "No soldier accounts available."
+
+    lines = []
+    for arc_id, passages in passages_by_arc.items():
+        arc_name = arc_id.replace("_", " ").title()
+        lines.append(f"\n### Voices from {arc_name}")
+
+        for p in passages[:10]:  # Limit per arc
+            perspective = f" ({p.source_perspective})" if p.source_perspective else ""
+            lines.append(f"\n**{p.source_author}**{perspective}, {p.source_title}:")
+            lines.append(f'"{p.content[:400]}"')
+
+    return "\n".join(lines)
+
+
+def format_arc_summaries(arc_summaries: dict[str, str]) -> str:
+    """Format arc narrative summaries."""
+    if not arc_summaries:
+        return "The war continues on multiple fronts."
+
+    lines = []
+    for arc_id, summary in arc_summaries.items():
+        arc_name = arc_id.replace("_", " ").title()
+        lines.append(f"**{arc_name}**: {summary[:300]}")
+
+    return "\n\n".join(lines)
+
+
+def format_events_with_passages(
+    events_by_arc: dict[str, list[dict]],
+    passages_by_event: dict[str, list[PassageResult]],
+) -> str:
+    """Format events with their matched passages inline.
+
+    This groups passages WITH their events so the model knows which
+    quotes relate to which events.
+    """
+    if not events_by_arc:
+        return "No events recorded."
+
+    lines = []
+    for arc_id, events in events_by_arc.items():
+        arc_name = arc_id.replace("_", " ").title()
+        lines.append(f"\n### {arc_name}")
+
+        # Sort events by date
+        for event in sorted(events, key=lambda e: e.get("date", "")):
+            date = event.get("date", "")
+            title = event.get("title", "Unknown")
+            summary = event.get("summary", "")[:200]
+
+            lines.append(f"\n**{date}: {title}**")
+            if summary:
+                lines.append(f"{summary}")
+
+            # Add matched passages for this event
+            event_passages = passages_by_event.get(title, [])
+            if event_passages:
+                lines.append(f"\n  Voices for this event:")
+                for p in event_passages[:3]:  # Limit per event
+                    lines.append(f"  - {p.source_author}: \"{p.content[:200]}...\"")
+
+    return "\n".join(lines)
+
+
+def generate_month_hybrid(
+    month: str,
+    events_by_arc: dict[str, list[dict]],
+    passages_by_arc: dict[str, list[PassageResult]],
+    passages_by_event: dict[str, list[PassageResult]],
+    arc_summaries: dict[str, str],
+    model: str = "claude-sonnet-4-20250514",
+) -> MonthOutput:
+    """Generate tweets using hybrid approach: event narrative + matched passages.
+
+    This combines:
+    - Events for STRUCTURE (what happened)
+    - Passages for VOICE (quotes from people AT those events)
+    - Arcs for NARRATIVE (how events connect)
+
+    Args:
+        month: Month in YYYY-MM format
+        events_by_arc: Events grouped by arc
+        passages_by_arc: Passages grouped by arc (from sources covering that arc)
+        arc_summaries: Narrative summaries for each arc
+        model: Claude model to use
+
+    Returns:
+        MonthOutput with all generated content
+    """
+    client = get_client()
+
+    # Use event-matched passages for better context
+    prompt = HYBRID_GENERATION_PROMPT.format(
+        month=month,
+        arc_narratives=format_arc_summaries(arc_summaries),
+        events_section=format_events_with_passages(events_by_arc, passages_by_event),
+        passages_section=format_passages_by_arc(passages_by_arc),
+    )
+
+    response = client.messages.create(
+        model=model,
+        max_tokens=16000,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    response_text = response.content[0].text
+
+    # Extract JSON from response
+    if "```json" in response_text:
+        response_text = response_text.split("```json")[1].split("```")[0]
+    elif "```" in response_text:
+        response_text = response_text.split("```")[1].split("```")[0]
+
+    try:
+        data = json.loads(response_text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Failed to parse Claude response as JSON: {e}\nResponse: {response_text[:500]}")
+
+    # Convert to dataclasses
     days = {}
     for date_str, day_data in data.get("days", {}).items():
         tweets = []
