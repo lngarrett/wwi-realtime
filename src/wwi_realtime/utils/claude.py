@@ -709,6 +709,77 @@ def validate_tweets(month_output: MonthOutput) -> list[str]:
     return warnings
 
 
+def validate_event_coverage(
+    output: MonthOutput,
+    events_by_date: dict[str, list[dict]],
+) -> dict:
+    """Check how well the output covers the input events.
+
+    Returns:
+        Dict with coverage metrics and list of uncovered events
+    """
+    # Collect all event titles from input
+    all_events = []
+    for date_str, events in events_by_date.items():
+        for event in events:
+            all_events.append({
+                "date": date_str,
+                "title": event.get("title", ""),
+            })
+
+    # Collect all text from output
+    all_output_text = []
+    covered_dates = set()
+
+    for date_str, day in output.days.items():
+        covered_dates.add(date_str)
+
+        # Single tweets
+        for tweet in day.tweets:
+            all_output_text.append(tweet.text.lower())
+
+        # Threads
+        for thread in day.threads:
+            all_output_text.append(thread.event_title.lower())
+            for tweet in thread.tweets:
+                all_output_text.append(tweet.text.lower())
+
+    combined_text = " ".join(all_output_text)
+
+    # Check each event for coverage
+    covered_events = []
+    uncovered_events = []
+
+    for event in all_events:
+        title = event["title"]
+
+        # Extract key words from event title
+        keywords = [w.lower() for w in title.split() if len(w) > 4]
+
+        # Check if any keyword appears in output
+        is_covered = False
+        for kw in keywords:
+            if kw in combined_text:
+                is_covered = True
+                break
+
+        # Also check if the date has any content
+        if event["date"] in covered_dates:
+            is_covered = True
+
+        if is_covered:
+            covered_events.append(event)
+        else:
+            uncovered_events.append(event)
+
+    return {
+        "total_events": len(all_events),
+        "covered_events": len(covered_events),
+        "coverage_pct": len(covered_events) / len(all_events) * 100 if all_events else 0,
+        "uncovered": uncovered_events,
+    }
+
+
 def output_to_dict(month_output: MonthOutput) -> dict:
     """Convert MonthOutput to serializable dict."""
     return {

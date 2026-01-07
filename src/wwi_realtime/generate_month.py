@@ -17,6 +17,7 @@ from wwi_realtime.utils.claude import (
     generate_month_vivid,
     generate_month_hybrid,
     validate_tweets,
+    validate_event_coverage,
     output_to_dict,
 )
 
@@ -264,12 +265,20 @@ def main(month: str, db: str, output: str, summaries: str, model: str, dry_run: 
             model=model,
         )
 
-    # Validate
+    # Validate tweets
     warnings = validate_tweets(output_data)
     if warnings:
-        console.print("\n[yellow]Warnings:[/yellow]")
+        console.print("\n[yellow]Tweet Warnings:[/yellow]")
         for w in warnings[:10]:
             console.print(f"  - {w}")
+
+    # Validate event coverage
+    coverage = validate_event_coverage(output_data, events_by_date)
+    console.print(f"\n[bold]Event Coverage:[/bold] {coverage['covered_events']}/{coverage['total_events']} ({coverage['coverage_pct']:.0f}%)")
+    if coverage['uncovered'] and len(coverage['uncovered']) <= 10:
+        console.print("[yellow]Uncovered events:[/yellow]")
+        for e in coverage['uncovered'][:10]:
+            console.print(f"  - {e['date']}: {e['title']}")
 
     # Save output
     save_month_output(output_data, Path(output), Path(summaries))
