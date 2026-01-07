@@ -10,10 +10,11 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from wwi_realtime.generate.research import research_month
+from wwi_realtime.generate.research import research_month, research_month_vivid
 from wwi_realtime.utils.claude import (
     MonthOutput,
     generate_month_tweets,
+    generate_month_vivid,
     validate_tweets,
     output_to_dict,
 )
@@ -104,7 +105,9 @@ def save_month_output(
 @click.option("--summaries", default="data/month_summaries", help="Directory for month summaries")
 @click.option("--model", default="claude-sonnet-4-20250514", help="Claude model to use")
 @click.option("--dry-run", is_flag=True, help="Don't call Claude, just show research")
-def main(month: str, db: str, output: str, summaries: str, model: str, dry_run: bool):
+@click.option("--vivid", is_flag=True, default=True, help="Use vivid passage-first approach (default)")
+@click.option("--legacy", is_flag=True, help="Use legacy event-first approach")
+def main(month: str, db: str, output: str, summaries: str, model: str, dry_run: bool, vivid: bool, legacy: bool):
     """Generate tweets for a single month using the story engine."""
     # Parse month
     try:
@@ -126,57 +129,92 @@ def main(month: str, db: str, output: str, summaries: str, model: str, dry_run: 
     events_by_date = get_events_for_month(conn, year, month_num)
     total_events = sum(len(e) for e in events_by_date.values())
 
-    # Research the month - get passages and arc narratives
-    console.print(f"\n[bold]Researching {month}...[/bold]")
-    research = research_month(conn, year, month_num, events_by_date, max_passages_per_event=3)
+    # Determine which approach to use
+    use_vivid = vivid and not legacy
 
-    # Load previous month summary
-    previous_summary = load_previous_summary(Path(summaries), year, month_num)
+    if use_vivid:
+        # VIVID approach: passages first, events for context
+        console.print(f"\n[bold]Researching {month} (vivid passage-first)...[/bold]")
+        research = research_month_vivid(conn, year, month_num, events_by_date, max_vivid_passages=40)
 
-    # Show what we found
-    console.print(f"\n[bold]Month: {month}[/bold]")
-    console.print(f"  Events found: {total_events}")
-    console.print(f"  Days with events: {len(events_by_date)}")
-    console.print(f"  Events with passages: {len(research['passages_by_event'])}")
-    console.print(f"  Active arcs: {len(research['arc_narratives'])}")
+        console.print(f"\n[bold]Month: {month}[/bold]")
+        console.print(f"  Events found: {total_events}")
+        console.print(f"  Days with events: {len(events_by_date)}")
+        console.print(f"  Vivid passages: {len(research['vivid_passages'])}")
 
-    total_passages = sum(len(p) for p in research['passages_by_event'].values())
-    console.print(f"  Total passages: {total_passages}")
+        if dry_run:
+            console.print("\n[yellow]Dry run - showing sample vivid passages[/yellow]")
+            console.print("\n[bold]Sample vivid passages:[/bold]")
+            for p in research['vivid_passages'][:5]:
+                console.print(f"\n  {p.source_author}:")
+                console.print(f"    \"{p.content[:150]}...\"")
 
-    if research['arc_narratives']:
-        console.print("\n[bold]Active arcs:[/bold]")
-        for arc_id in list(research['arc_narratives'].keys())[:5]:
-            console.print(f"  - {arc_id.replace('_', ' ').title()}")
+            console.print("\n[bold]Sample events for context:[/bold]")
+            for date_str, events in list(sorted(events_by_date.items()))[:5]:
+                console.print(f"\n  {date_str}:")
+                for e in events[:2]:
+                    console.print(f"    - {e['title']}")
+            return
 
-    if dry_run:
-        console.print("\n[yellow]Dry run - showing sample research[/yellow]")
-        console.print("\n[bold]Sample events by date:[/bold]")
-        for date_str, events in list(sorted(events_by_date.items()))[:5]:
-            console.print(f"\n  {date_str}:")
-            for e in events[:2]:
-                console.print(f"    - {e['title']}")
-                if e.get('arc_title'):
-                    console.print(f"      Arc: {e['arc_title']}")
+        # Generate tweets with vivid approach
+        console.print("\n[bold blue]Calling Claude API (vivid mode)...[/bold blue]")
+        output_data = generate_month_vivid(
+            month=month,
+            events_by_date=events_by_date,
+            vivid_passages=research['vivid_passages'],
+            model=model,
+        )
+    else:
+        # LEGACY approach: events first, passages as decoration
+        console.print(f"\n[bold]Researching {month} (legacy event-first)...[/bold]")
+        research = research_month(conn, year, month_num, events_by_date, max_passages_per_event=3)
 
-        console.print("\n[bold]Sample passages:[/bold]")
-        for event_title, passages in list(research['passages_by_event'].items())[:3]:
-            console.print(f"\n  For: {event_title}")
-            for p in passages[:1]:
-                console.print(f"    \"{p.content[:100]}...\"")
-                console.print(f"    - {p.source_author}, {p.source_title}")
+        # Load previous month summary
+        previous_summary = load_previous_summary(Path(summaries), year, month_num)
 
-        return
+        console.print(f"\n[bold]Month: {month}[/bold]")
+        console.print(f"  Events found: {total_events}")
+        console.print(f"  Days with events: {len(events_by_date)}")
+        console.print(f"  Events with passages: {len(research['passages_by_event'])}")
+        console.print(f"  Active arcs: {len(research['arc_narratives'])}")
 
-    # Generate tweets
-    console.print("\n[bold blue]Calling Claude API...[/bold blue]")
-    output_data = generate_month_tweets(
-        month=month,
-        events_by_date=events_by_date,
-        passages_by_event=research['passages_by_event'],
-        arc_narratives=research['arc_narratives'],
-        previous_month_summary=previous_summary,
-        model=model,
-    )
+        total_passages = sum(len(p) for p in research['passages_by_event'].values())
+        console.print(f"  Total passages: {total_passages}")
+
+        if research['arc_narratives']:
+            console.print("\n[bold]Active arcs:[/bold]")
+            for arc_id in list(research['arc_narratives'].keys())[:5]:
+                console.print(f"  - {arc_id.replace('_', ' ').title()}")
+
+        if dry_run:
+            console.print("\n[yellow]Dry run - showing sample research[/yellow]")
+            console.print("\n[bold]Sample events by date:[/bold]")
+            for date_str, events in list(sorted(events_by_date.items()))[:5]:
+                console.print(f"\n  {date_str}:")
+                for e in events[:2]:
+                    console.print(f"    - {e['title']}")
+                    if e.get('arc_title'):
+                        console.print(f"      Arc: {e['arc_title']}")
+
+            console.print("\n[bold]Sample passages:[/bold]")
+            for event_title, passages in list(research['passages_by_event'].items())[:3]:
+                console.print(f"\n  For: {event_title}")
+                for p in passages[:1]:
+                    console.print(f"    \"{p.content[:100]}...\"")
+                    console.print(f"    - {p.source_author}, {p.source_title}")
+
+            return
+
+        # Generate tweets with legacy approach
+        console.print("\n[bold blue]Calling Claude API (legacy mode)...[/bold blue]")
+        output_data = generate_month_tweets(
+            month=month,
+            events_by_date=events_by_date,
+            passages_by_event=research['passages_by_event'],
+            arc_narratives=research['arc_narratives'],
+            previous_month_summary=previous_summary,
+            model=model,
+        )
 
     # Validate
     warnings = validate_tweets(output_data)

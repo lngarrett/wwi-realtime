@@ -54,59 +54,56 @@ class MonthOutput:
     month_summary: str
 
 
-MONTH_GENERATION_PROMPT = """Generate tweets for {month} during World War I (1914-1918). You are a wire service correspondent reporting events as they happen.
+MONTH_GENERATION_PROMPT = """You are turning soldier memoirs into tweets for {month} during WWI.
 
-CRITICAL: This is WWI, not WWII. Russia is the Russian Empire (not Soviet). Germany is the German Empire/Kaiser's Germany.
+## YOUR TASK
+The passages below are from soldiers who lived through WWI. Turn them into tweets.
+The passages ARE the content. Events just tell you when things happened.
 
-## STYLE GUIDE - FOLLOW EXACTLY:
-
-GOOD tweet examples (copy this style):
-- "French Corporal Jules-André Peugeot, 21, shot by German patrol near Joncherey. First French soldier killed in the war."
-- "Ernst Jünger, 19, in first assault: 'I was soaked in sweat and quite out of breath. The moment I had longed for was here.'"
-- "Private Sidney Godley mans machine gun alone at Nimy Bridge. Wounded in head and back, captured only when ammunition runs out."
-- "32 German cavalrymen killed, 150 Russian dead, 600 prisoners taken as confused infantry retreat."
-
-BAD tweets (NEVER write like this):
-- "Spectacular cavalry charge at Lagarde!" (no exclamation marks)
-- "The cult of the offensive proves deadly." (historian commentary - you're a reporter, not a historian)
-- "What may be history's last great mounted assault." (editorializing, you don't know the future)
-- "The Empire strikes back in Africa." (modern reference, editorializing)
-- "Will Belgian forts hold? Only time will tell." (rhetorical questions)
-- "This marks a turning point in the war." (historian hindsight)
-
-## RULES:
-1. NAME INDIVIDUALS: "Private Ernst Jünger, 19", "Nurse Edith Cavell", "Corporal Adolf Hitler"
-2. QUOTE THE PRIMARY SOURCES PROVIDED BELOW - copy their exact words in quotation marks
-3. NO exclamation marks. NO editorializing. NO historian commentary. You report facts only.
-4. NO rhetorical questions. NO "will this...?" or "what does this mean?"
-5. NO phrases like "last great X", "the war spreads", "marking the end of", "ushering in a new era"
-6. Specific numbers: "57,000 casualties", "19 killed, 43 wounded"
-7. Present tense, active voice. Report as if happening now.
-8. For each event, choose EITHER a single tweet OR a thread - NEVER both. Major events get threads, minor events get single tweets.
-9. 280 characters max per tweet
-10. Use quotes from the PRIMARY SOURCES section below - these are memoirs from actual soldiers
-
-## PREVIOUS MONTH:
-{previous_month_summary}
-
-## EVENTS BY DATE:
-{events_by_date}
-
-## PRIMARY SOURCES - USE THESE QUOTES:
+## SOLDIER MEMOIRS - THESE ARE YOUR TWEETS
 {passages_section}
 
-When you see a passage above, copy the most vivid part EXACTLY and attribute it:
-- Ernst Jünger writes: "The trench was a mess of blood and torn equipment..."
-- From a letter home: "We have not slept in three days. The shelling never stops."
-- Remarque: "We have become wild beasts."
+## WHAT HAPPENED THIS MONTH (for context/timing only)
+{events_by_date}
 
-## OUTPUT FORMAT:
-JSON object with this structure:
+## HOW TO WRITE EACH TWEET
+
+1. COPY the soldier's exact words. The memoir IS the tweet.
+   - Passage: "The shells burst around us. I saw men falling everywhere."
+   - Tweet: Robert Graves at the Somme: "The shells burst around us. I saw men falling everywhere."
+
+2. Add minimal framing - who, where, that's it.
+   - "Ernst Jünger, 19, in his first assault: '[quote from passage]'"
+   - "Arthur Empey in the trenches: '[quote from passage]'"
+
+3. Match passages to events by topic, not exact date. A trench warfare passage can go on any trench warfare day.
+
+## EXAMPLES
+
+GOOD (memoir IS the tweet):
+- "Remarque: 'We have become wild beasts. We are filled with fear and rage.'"
+- "Robert Graves at Loos: 'The sergeant said to me: It's murder, sir. Of course it's murder, you bloody fool, I agreed.'"
+- "Arthur Empey on a night raid: 'I was trembling all over. My teeth were chattering.'"
+
+BAD (summarizing events instead of quoting):
+- "British forces attack German positions at Loos. Heavy casualties reported." (no memoir voice)
+- "The Battle of the Somme begins with artillery bombardment." (event summary, not soldier experience)
+
+## RULES
+- 70% of tweets MUST be direct quotes from the passages above
+- 280 characters max per tweet
+- NO exclamation marks
+- NO historian commentary ("this marked", "the war would never", "proving that")
+- Present tense throughout
+- Assign tweets to dates that make sense for the topic
+
+## OUTPUT FORMAT
+JSON object:
 {{
   "days": {{
     "YYYY-MM-DD": {{
       "tweets": [
-        {{"text": "Tweet text here", "has_quote": true/false, "source_attribution": "Author, Source" or null}}
+        {{"text": "Author at location: 'quote from passage'", "has_quote": true, "source_attribution": "Author, Book Title"}}
       ],
       "threads": [
         {{
@@ -114,18 +111,18 @@ JSON object with this structure:
           "arc_id": "arc_id",
           "arc_title": "Arc Title",
           "tweets": [
-            {{"text": "First tweet", "position": 1, "total": 3, "has_quote": false, "source_attribution": null}},
-            {{"text": "Quote tweet", "position": 2, "total": 3, "has_quote": true, "source_attribution": "Author, Book"}}
+            {{"text": "Tweet 1", "position": 1, "total": 2, "has_quote": true, "source_attribution": "Author, Book"}},
+            {{"text": "Tweet 2", "position": 2, "total": 2, "has_quote": true, "source_attribution": "Author, Book"}}
           ]
         }}
       ],
-      "summary": "Brief factual summary"
+      "summary": "Brief summary"
     }}
   }},
-  "month_summary": "Key events this month"
+  "month_summary": "Key events"
 }}
 
-Generate coverage for {month}. Focus on individuals. Quote the sources. No editorializing."""
+Generate tweets for {month}. The soldier memoirs ARE your content."""
 
 
 def get_client() -> Anthropic:
@@ -202,6 +199,32 @@ QUOTE THIS: "{p.content[:500]}"
     return "\n".join(lines)
 
 
+def format_vivid_passages(passages: list[PassageResult], max_chars: int = 12000) -> str:
+    """Format vivid passages for passage-first generation."""
+    if not passages:
+        return "No passages available."
+
+    lines = []
+    total_chars = 0
+
+    for i, p in enumerate(passages, 1):
+        perspective = f" ({p.source_perspective})" if p.source_perspective else ""
+
+        entry = f"""
+PASSAGE {i}:
+Author: {p.source_author}{perspective}
+Book: {p.source_title}
+Text: "{p.content}"
+---"""
+        if total_chars + len(entry) > max_chars:
+            break
+
+        lines.append(entry)
+        total_chars += len(entry)
+
+    return "\n".join(lines)
+
+
 def generate_month_tweets(
     month: str,
     events_by_date: dict[str, list[dict]],
@@ -268,6 +291,101 @@ def generate_month_tweets(
             ))
 
         # Parse threads
+        threads = []
+        for thread_data in day_data.get("threads", []):
+            thread_tweets = []
+            for t in thread_data.get("tweets", []):
+                thread_tweets.append(GeneratedTweet(
+                    text=t.get("text", ""),
+                    position=t.get("position", 1),
+                    total=t.get("total", len(thread_data.get("tweets", []))),
+                    has_quote=t.get("has_quote", False),
+                    source_attribution=t.get("source_attribution"),
+                ))
+
+            threads.append(TweetThread(
+                event_title=thread_data.get("event_title", ""),
+                event_date=date_str,
+                arc_id=thread_data.get("arc_id"),
+                arc_title=thread_data.get("arc_title"),
+                tweets=thread_tweets,
+            ))
+
+        days[date_str] = DayOutput(
+            date=date_str,
+            tweets=tweets,
+            threads=threads,
+            summary=day_data.get("summary", ""),
+        )
+
+    return MonthOutput(
+        month=month,
+        days=days,
+        month_summary=data.get("month_summary", ""),
+    )
+
+
+def generate_month_vivid(
+    month: str,
+    events_by_date: dict[str, list[dict]],
+    vivid_passages: list[PassageResult],
+    model: str = "claude-sonnet-4-20250514",
+) -> MonthOutput:
+    """Generate tweets using vivid passage-first approach.
+
+    Instead of event-first generation, this uses the soldier memoirs
+    as the primary content, with events only for timing context.
+
+    Args:
+        month: Month in YYYY-MM format
+        events_by_date: Dict mapping date strings to list of events
+        vivid_passages: List of vivid, tweetable passages
+        model: Claude model to use
+
+    Returns:
+        MonthOutput with all generated content
+    """
+    client = get_client()
+
+    prompt = MONTH_GENERATION_PROMPT.format(
+        month=month,
+        events_by_date=format_events_for_prompt(events_by_date),
+        passages_section=format_vivid_passages(vivid_passages),
+    )
+
+    response = client.messages.create(
+        model=model,
+        max_tokens=16000,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    response_text = response.content[0].text
+
+    # Extract JSON from response
+    if "```json" in response_text:
+        response_text = response_text.split("```json")[1].split("```")[0]
+    elif "```" in response_text:
+        response_text = response_text.split("```")[1].split("```")[0]
+
+    try:
+        data = json.loads(response_text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Failed to parse Claude response as JSON: {e}\nResponse: {response_text[:500]}")
+
+    # Convert to dataclasses (same as generate_month_tweets)
+    days = {}
+    for date_str, day_data in data.get("days", {}).items():
+        tweets = []
+        for t in day_data.get("tweets", []):
+            tweets.append(GeneratedTweet(
+                text=t.get("text", ""),
+                position=1,
+                total=1,
+                has_quote=t.get("has_quote", False),
+                source_attribution=t.get("source_attribution"),
+            ))
+
         threads = []
         for thread_data in day_data.get("threads", []):
             thread_tweets = []

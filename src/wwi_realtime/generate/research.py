@@ -14,6 +14,7 @@ from wwi_realtime.sources.search import (
     get_quotes_for_event,
     get_diverse_perspectives,
     get_passages_for_date,
+    get_vivid_passages,
 )
 from wwi_realtime.generate.prompts import EventContext, GenerationContext
 
@@ -257,3 +258,47 @@ def format_research_summary(research: dict) -> str:
             lines.append(f"  - {arc_id.replace('_', ' ').title()}")
 
     return "\n".join(lines)
+
+
+def research_month_vivid(
+    conn: sqlite3.Connection,
+    year: int,
+    month: int,
+    events_by_date: dict[str, list[dict]],
+    max_vivid_passages: int = 40,
+) -> dict:
+    """Research a month using vivid passage-first approach.
+
+    Instead of searching for passages by event title (which returns junk),
+    this finds the most vivid, tweetable passages and lets the LLM match
+    them to events by topic.
+
+    Args:
+        conn: Database connection
+        year: Year
+        month: Month (1-12)
+        events_by_date: Events grouped by date
+        max_vivid_passages: Max vivid passages to include
+
+    Returns:
+        Dict with:
+        - vivid_passages: list of best tweetable passages
+        - events_by_date: events for context
+        - event_count: total events
+    """
+    # Get vivid passages - these ARE the content
+    vivid_passages = get_vivid_passages(
+        conn,
+        limit=max_vivid_passages,
+        min_words=30,
+        max_words=120,
+    )
+
+    # Count events
+    event_count = sum(len(events) for events in events_by_date.values())
+
+    return {
+        "vivid_passages": vivid_passages,
+        "events_by_date": events_by_date,
+        "event_count": event_count,
+    }

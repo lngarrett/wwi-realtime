@@ -365,3 +365,158 @@ def get_diverse_perspectives(
             results[perspective] = perspective_results
 
     return results
+
+
+def get_vivid_passages(
+    conn: sqlite3.Connection,
+    limit: int = 50,
+    min_words: int = 30,
+    max_words: int = 120,
+) -> list[PassageResult]:
+    """Get the most vivid, tweetable passages from all sources.
+
+    Finds passages with:
+    - Direct quotes
+    - Combat/emotional keywords
+    - Good length for tweets
+    - Diverse sources
+
+    Args:
+        conn: Database connection
+        limit: Maximum results
+        min_words: Minimum word count
+        max_words: Maximum word count
+
+    Returns:
+        List of vivid PassageResult objects
+    """
+    # Keywords that indicate vivid, tweetable content - SPECIFIC phrases
+    vivid_keywords = [
+        # Direct combat action
+        "went over the top", "fixed bayonets", "machine gun fire",
+        "shells burst", "artillery barrage", "the attack",
+        # Death and wounds - specific
+        "was killed", "was wounded", "lay dead", "fell dead",
+        "hit by", "struck by", "bleeding", "stretcher",
+        # First person intensity
+        "I saw", "I heard", "I felt", "we attacked", "we charged",
+        # Specific horrors
+        "screaming", "crying", "groaning", "stench of",
+        "corpse", "body", "burial",
+    ]
+
+    # Build SQL with keyword matching
+    keyword_conditions = " OR ".join([f"sp.content LIKE '%{kw}%'" for kw in vivid_keywords])
+
+    cursor = conn.execute(
+        f"""SELECT sp.id, sp.source_id, sp.content,
+                  cs.title, cs.author, cs.type, cs.perspective,
+                  sp.has_direct_quote, sp.date_approximate, sp.word_count
+           FROM source_passages sp
+           JOIN canonical_sources cs ON sp.source_id = cs.id
+           WHERE sp.has_direct_quote = 1
+           AND sp.word_count BETWEEN ? AND ?
+           AND ({keyword_conditions})
+           ORDER BY RANDOM()
+           LIMIT ?""",
+        (min_words, max_words, limit * 3)  # Get extra to filter
+    )
+
+    results = []
+    seen_content_starts = set()  # Dedupe similar passages
+
+    for row in cursor.fetchall():
+        content = row[2]
+        # Skip if we have similar content
+        content_start = content[:50]
+        if content_start in seen_content_starts:
+            continue
+        seen_content_starts.add(content_start)
+
+        results.append(PassageResult(
+            passage_id=row[0],
+            source_id=row[1],
+            content=content,
+            source_title=row[3],
+            source_author=row[4],
+            source_type=row[5],
+            source_perspective=row[6],
+            has_direct_quote=bool(row[7]),
+            date_approximate=row[8],
+            word_count=row[9],
+        ))
+
+        if len(results) >= limit:
+            break
+
+    return results
+
+
+def get_passages_for_period(
+    conn: sqlite3.Connection,
+    year: int,
+    sources_to_include: list[str] | None = None,
+    limit: int = 40,
+) -> list[PassageResult]:
+    """Get vivid passages relevant to a time period.
+
+    Uses source metadata and date_approximate to find period-relevant content.
+
+    Args:
+        conn: Database connection
+        year: Year to find passages for
+        sources_to_include: Optional list of source IDs to limit to
+        limit: Maximum results
+
+    Returns:
+        List of PassageResult objects
+    """
+    # Find passages with approximate dates matching this year
+    year_patterns = [f"%{year}%", f"%{year-1}%", f"%{year+1}%"]
+
+    conditions = []
+    params = []
+
+    for pattern in year_patterns:
+        conditions.append("sp.date_approximate LIKE ?")
+        params.append(pattern)
+
+    where_clause = " OR ".join(conditions)
+
+    if sources_to_include:
+        placeholders = ",".join(["?" for _ in sources_to_include])
+        where_clause = f"({where_clause}) AND sp.source_id IN ({placeholders})"
+        params.extend(sources_to_include)
+
+    params.extend([30, 150, limit])
+
+    cursor = conn.execute(
+        f"""SELECT sp.id, sp.source_id, sp.content,
+                  cs.title, cs.author, cs.type, cs.perspective,
+                  sp.has_direct_quote, sp.date_approximate, sp.word_count
+           FROM source_passages sp
+           JOIN canonical_sources cs ON sp.source_id = cs.id
+           WHERE ({where_clause})
+           AND sp.has_direct_quote = 1
+           AND sp.word_count BETWEEN ? AND ?
+           ORDER BY RANDOM()
+           LIMIT ?""",
+        params
+    )
+
+    results = []
+    for row in cursor.fetchall():
+        results.append(PassageResult(
+            passage_id=row[0],
+            source_id=row[1],
+            content=row[2],
+            source_title=row[3],
+            source_author=row[4],
+            source_type=row[5],
+            source_perspective=row[6],
+            has_direct_quote=bool(row[7]),
+            date_approximate=row[8],
+            word_count=row[9],
+        ))
+
+    return results
