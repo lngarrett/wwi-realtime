@@ -54,59 +54,78 @@ class MonthOutput:
     month_summary: str
 
 
-MONTH_GENERATION_PROMPT = """You are generating tweets for {month} during World War I, as if reporting from that time.
+MONTH_GENERATION_PROMPT = """Generate tweets for {month} during World War I (1914-1918). You are a wire service correspondent reporting events as they happen.
 
-Your task is to write historically accurate tweets that tell HUMAN stories, not just facts. Use present tense. Be vivid and specific.
+CRITICAL: This is WWI, not WWII. Russia is the Russian Empire (not Soviet). Germany is the German Empire/Kaiser's Germany.
 
-## PREVIOUS MONTH CONTEXT:
+## STYLE GUIDE - FOLLOW EXACTLY:
+
+GOOD tweet examples (copy this style):
+- "French Corporal Jules-André Peugeot, 21, shot by German patrol near Joncherey. First French soldier killed in the war."
+- "Ernst Jünger, 19, in first assault: 'I was soaked in sweat and quite out of breath. The moment I had longed for was here.'"
+- "Private Sidney Godley mans machine gun alone at Nimy Bridge. Wounded in head and back, captured only when ammunition runs out."
+- "32 German cavalrymen killed, 150 Russian dead, 600 prisoners taken as confused infantry retreat."
+
+BAD tweets (NEVER write like this):
+- "Spectacular cavalry charge at Lagarde!" (no exclamation marks)
+- "The cult of the offensive proves deadly." (historian commentary - you're a reporter, not a historian)
+- "What may be history's last great mounted assault." (editorializing, you don't know the future)
+- "The Empire strikes back in Africa." (modern reference, editorializing)
+- "Will Belgian forts hold? Only time will tell." (rhetorical questions)
+- "This marks a turning point in the war." (historian hindsight)
+
+## RULES:
+1. NAME INDIVIDUALS: "Private Ernst Jünger, 19", "Nurse Edith Cavell", "Corporal Adolf Hitler"
+2. QUOTE THE PRIMARY SOURCES PROVIDED BELOW - copy their exact words in quotation marks
+3. NO exclamation marks. NO editorializing. NO historian commentary. You report facts only.
+4. NO rhetorical questions. NO "will this...?" or "what does this mean?"
+5. NO phrases like "last great X", "the war spreads", "marking the end of", "ushering in a new era"
+6. Specific numbers: "57,000 casualties", "19 killed, 43 wounded"
+7. Present tense, active voice. Report as if happening now.
+8. For each event, choose EITHER a single tweet OR a thread - NEVER both. Major events get threads, minor events get single tweets.
+9. 280 characters max per tweet
+10. Use quotes from the PRIMARY SOURCES section below - these are memoirs from actual soldiers
+
+## PREVIOUS MONTH:
 {previous_month_summary}
-
-## ACTIVE NARRATIVE ARCS THIS MONTH:
-{arc_narratives}
 
 ## EVENTS BY DATE:
 {events_by_date}
 
-## PRIMARY SOURCE MATERIAL:
-Use these passages to add human voices and specific details. QUOTE THEM DIRECTLY when relevant.
+## PRIMARY SOURCES - USE THESE QUOTES:
 {passages_section}
 
-## RULES:
-1. Generate 1-10 tweets per day (280 characters max each)
-2. Voice: Present tense ("Fighting continues..." not "Fighting continued...")
-3. HUMAN FOCUS: Name individuals, give ages, quote their words
-4. USE THE SOURCES: Include direct quotes with attribution ("As Jünger wrote: '...'")
-5. THREAD MAJOR EVENTS: Generate 2-4 connected tweets for significant events
-6. Balance perspectives: Show British, German, French viewpoints
-7. Connect to arcs: Reference the larger narrative ("Day 5 of the Somme offensive...")
-8. Quiet days may have 0-1 tweets
-
-## THREAD FORMAT:
-For major events, create threads like:
-{{"type": "thread", "event_title": "Battle Name", "arc_id": "arc_id", "arc_title": "Arc Name", "tweets": [
-  {{"text": "Tweet 1 text", "position": 1, "total": 3, "has_quote": false}},
-  {{"text": "\\"Quote here\\" - Author", "position": 2, "total": 3, "has_quote": true, "source_attribution": "Author Name, Book Title"}},
-  {{"text": "Tweet 3 text", "position": 3, "total": 3, "has_quote": false}}
-]}}
+When you see a passage above, copy the most vivid part EXACTLY and attribute it:
+- Ernst Jünger writes: "The trench was a mess of blood and torn equipment..."
+- From a letter home: "We have not slept in three days. The shelling never stops."
+- Remarque: "We have become wild beasts."
 
 ## OUTPUT FORMAT:
-Output a JSON object:
+JSON object with this structure:
 {{
   "days": {{
     "YYYY-MM-DD": {{
       "tweets": [
-        {{"text": "Single tweet text", "has_quote": false}}
+        {{"text": "Tweet text here", "has_quote": true/false, "source_attribution": "Author, Source" or null}}
       ],
       "threads": [
-        {{"type": "thread", "event_title": "Major Event", "arc_id": "arc", "arc_title": "Arc Title", "tweets": [...]}}
+        {{
+          "event_title": "Event Name",
+          "arc_id": "arc_id",
+          "arc_title": "Arc Title",
+          "tweets": [
+            {{"text": "First tweet", "position": 1, "total": 3, "has_quote": false, "source_attribution": null}},
+            {{"text": "Quote tweet", "position": 2, "total": 3, "has_quote": true, "source_attribution": "Author, Book"}}
+          ]
+        }}
       ],
-      "summary": "Brief day summary"
+      "summary": "Brief factual summary"
     }}
   }},
-  "month_summary": "Key events and narrative threads this month"
+  "month_summary": "Key events this month"
 }}
 
-Generate compelling, human-centered coverage for {month}."""
+Generate coverage for {month}. Focus on individuals. Quote the sources. No editorializing."""
 
 
 def get_client() -> Anthropic:
@@ -153,8 +172,8 @@ def format_events_for_prompt(events_by_date: dict[str, list[dict]]) -> str:
     return "\n".join(lines)
 
 
-def format_passages_for_prompt(passages_by_event: dict[str, list[PassageResult]], max_chars: int = 8000) -> str:
-    """Format passages for prompt, grouping by event."""
+def format_passages_for_prompt(passages_by_event: dict[str, list[PassageResult]], max_chars: int = 10000) -> str:
+    """Format passages for prompt, making them easy to quote directly."""
     if not passages_by_event:
         return "No primary sources available for this month."
 
@@ -165,19 +184,15 @@ def format_passages_for_prompt(passages_by_event: dict[str, list[PassageResult]]
         if total_chars >= max_chars:
             break
 
-        lines.append(f"\n### For: {event_title}")
-
         for p in passages[:3]:  # Max 3 passages per event
-            attribution = f"{p.source_title} by {p.source_author}"
-            if p.source_perspective:
-                attribution += f" ({p.source_perspective})"
-
-            quote_marker = " [HAS QUOTE]" if p.has_direct_quote else ""
+            # Format for easy quoting
+            author_short = p.source_author.split()[-1] if p.source_author else "Unknown"  # Last name
+            perspective = f", {p.source_perspective}" if p.source_perspective else ""
 
             entry = f"""
-**{attribution}**{quote_marker}
-"{p.content[:400]}"
-"""
+SOURCE: {p.source_author}, "{p.source_title}"{perspective}
+QUOTE THIS: "{p.content[:500]}"
+---"""
             if total_chars + len(entry) > max_chars:
                 break
 
